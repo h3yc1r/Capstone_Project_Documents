@@ -74,9 +74,8 @@ st.markdown("""
 
 
 # ===============================================
-# 📂 3. SABİT DOSYA YOLLARI
+# 📂 3. SABİT DOSYA YOLLARI (GÖRELİ - RELATIVE)
 # ===============================================
-# Bu yolların DOĞRU olduğundan emin olun
 try:
     # --- Forecast Girdileri ---
     TRAIN_PATH = "training_data_FW22_FW25_güncel_with_newcols.csv"
@@ -315,7 +314,8 @@ if page == "🧠 Talep Tahmini (Analist Modeli)":
                 test_output_df = st.session_state.test_df.copy()
                 test_output_df["TVALL_Sales_Qty"] = fw26_predictions_clean
             
-            with st.spinner(f"Adım 5/5: Tahminler {OPTIMIZATION_INPUT_PATH.split(chr(92))[-1]} dosyasına kaydediliyor..."):
+            with st.spinner(f"Adım 5/5: Tahminler {OPTIMIZATION_INPUT_PATH} dosyasına kaydediliyor..."):
+                # ÇIKTI YOLU (GÖRELİ)
                 test_output_df.to_csv(OPTIMIZATION_INPUT_PATH, index=False, sep=';', encoding='utf-8-sig')
                 
                 st.session_state.opt_input_df = test_output_df
@@ -342,6 +342,7 @@ if page == "🧠 Talep Tahmini (Analist Modeli)":
             
     st.divider()
     
+    # --- Model eğitilmediyse veya sayfa yeni açıldıysa, mevcut state'i yükle ---
     if 'best_model' not in st.session_state:
         try:
             with st.spinner("Analiz modülü yükleniyor... (İlk çalıştırma)"):
@@ -372,6 +373,7 @@ if page == "🧠 Talep Tahmini (Analist Modeli)":
             st.error(f"İlk model eğitim pipeline'ı çalışırken hata oluştu: {e}")
             st.stop()
 
+    # --- 4 SEKMELİ YAPI (State yüklendikten sonra) ---
     tab1, tab2, tab3, tab4 = st.tabs([
         "📈 Genel Özet", 
         "🔍 Satış ve Tahmin Analizi", 
@@ -379,6 +381,7 @@ if page == "🧠 Talep Tahmini (Analist Modeli)":
         "⚙ Model Performansı"
     ])
 
+    # (Sekmelerin içeriği)
     with tab1:
         st.header("Genel Özet (Executive Summary)")
         
@@ -555,7 +558,7 @@ elif page == "📈 Optimizasyon (Karar Modeli)":
     # SAYFA 2: OPTİMİZASYON (YÖNETİCİ DASHBOARD'U)
     # ====================================================
     
-    st.title("📈 Showroom Optimizasyon Karar Modeli")
+    st.title("📈 Range Planı Optimizasyon Modeli") # <-- BAŞLIK GÜNCELLENDİ
 
     if st.session_state.opt_input_df is None:
         st.error(f"Optimizasyon girdi verisi ({OPTIMIZATION_INPUT_PATH.split(chr(92))[-1]}) bulunamadı.")
@@ -574,6 +577,28 @@ elif page == "📈 Optimizasyon (Karar Modeli)":
         with st.spinner("Optimizasyon modeli çalışıyor... (Pyomo + glpk)"):
             try:
                 data = data_raw.copy()
+
+                # === DÜZELTME: Veri Hazırlık Adımları Eklendi ===
+                # Fiyat sütununu sayıya dönüştür (nokta ve virgül temizleme)
+                if data["ListPrice"].dtype == 'object':
+                    data["ListPrice"] = (
+                        data["ListPrice"]
+                        .astype(str)
+                        .str.replace(".", "", regex=False)  # binlik ayırıcı
+                        .str.replace(",", ".", regex=False) # ondalık ayırıcı
+                        .astype(float)
+                    )
+                
+                # Segmentleri tekilleştir (Aggregation)
+                segment_cols = ["Brand", "Gender", "Klasman", "SubCategory", "Line", "Channel"]
+                numeric_cols = data.select_dtypes(include=['number', 'float']).columns.tolist()
+                aggregations = {col: "mean" for col in numeric_cols}
+                aggregations.update({"TVALL_Sales_Qty": "sum"}) # Tahminleri topla
+                
+                merged_df = data.groupby(segment_cols, as_index=False).agg(aggregations)
+                data = merged_df.copy()
+                st.write(f"Veri {len(data_raw)} satırdan {len(data)} tekil segmente birleştirildi.")
+                # =========================================================
 
                 # --- Adım 1: Parametreleri Hazırla ---
                 index_set = data.index.tolist()
@@ -629,7 +654,14 @@ elif page == "📈 Optimizasyon (Karar Modeli)":
                 model.AvgMarginConstraint = Constraint(rule=avg_margin_rule)
 
                 # --- Adım 3: Modeli Çöz ---
+                
+                # === DÜZELTME: Solver'ı 'glpk' (veya 'cbc') olarak ayarla ===
+                # Bu kod yerelde (GLPK kuruluysa) 'glpk' ile çalışır.
+                # Streamlit Cloud için 'cbc' ve packages.txt'de 'coin-or-cbc' gerekir.
+                # Biz GLPK ile devam edelim, 'packages.txt' dosyan 'glpk-utils' içermeli.
                 solver = SolverFactory("glpk")
+                # ========================================================
+                
                 results = solver.solve(model, tee=False) 
 
                 if (results.solver.status != 'ok') or (results.solver.termination_condition != 'optimal'):
@@ -643,7 +675,7 @@ elif page == "📈 Optimizasyon (Karar Modeli)":
             
             except Exception as e:
                 st.error(f"Optimizasyon sırasında bir hata oluştu: {e}")
-                st.info("glpk solver'ın sisteminizde kurulu olduğundan emin olun.")
+                st.info("GLPK/CBC solver'ın sisteminizde kurulu (veya packages.txt'de tanımlı) olduğundan emin olun.")
                 st.stop() 
 
         # ====================================================
@@ -665,11 +697,8 @@ elif page == "📈 Optimizasyon (Karar Modeli)":
         basic_sku_sum = data_final[data_final['Line'].str.lower() == 'basic']['Optimal_SKU_FW26'].sum()
         basic_ratio_realized = (basic_sku_sum / total_sku)
 
-        # --- 1. Yönetici Özeti (KPI Metrikleri) ---
-        
-        # === SON İSTEK: Başlık Değişikliği ===
+        # --- 1. KPI Dashboard ---
         st.subheader("📈 KPI Dashboard") 
-        # ==================================
         
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("🎯 Toplam Potansiyel (Amaç)", f"{value(model.objective):,.0f}")
