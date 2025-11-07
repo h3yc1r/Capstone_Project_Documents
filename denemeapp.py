@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Nov  6 19:00:35 2025
+
+@author: fatma
+"""
 
 # ===============================================
 # 📦 1. GEREKLİ KÜTÜPHANELER
@@ -516,8 +522,8 @@ if page == "🧠 Talep Tahmini (Analist Modeli)":
         
         st.subheader("Model Karşılaştırması (5-Fold Cross Validation)")
         st.dataframe(st.session_state.results_df.style.highlight_min(subset=["MAE"], color='lightgreen')
-                                        .highlight_max(subset=["R2"], color='lightgreen')
-                                        .format({'MAE': '{:,.0f}', 'R2': '{:.3f}'}))
+                                     .highlight_max(subset=["R2"], color='lightgreen')
+                                     .format({'MAE': '{:,.0f}', 'R2': '{:.3f}'}))
         
         st.caption("MAE (Ortalama Mutlak Hata): Tahminlerin ortalama kaç adet saptığını gösterir (Düşük = İyi).")
         st.caption("R² (R-Kare): Satışlardaki değişimin ne kadarının model tarafından açıklandığını gösterir (Yüksek = İyi).")
@@ -541,19 +547,17 @@ if page == "🧠 Talep Tahmini (Analist Modeli)":
         
         if importance_df is not None:
             fig_imp = px.bar(importance_df.sort_values("Importance", ascending=True), 
-                            x="Importance", 
-                            y="Feature", 
-                            title="Modelin Karar Verirken Kullandığı En Önemli 15 Değişken",
-                            orientation='h')
+                             x="Importance", 
+                             y="Feature", 
+                             title="Modelin Karar Verirken Kullandığı En Önemli 15 Değişken",
+                             orientation='h')
             st.plotly_chart(fig_imp, use_container_width=True)
         else:
             st.info(f"Seçilen model ({st.session_state.best_model_name}) özellik önemi (feature importance) desteklememektedir.")
 
 
 elif page == "📈 Optimizasyon (Karar Modeli)":
-    
-    # <--- PARÇA 1: BAŞLIK EKLENDİ (KOD B'DEN) --->
-    st.title("📈 Range Planı Optimizasyon Modeli") 
+    # ... (Yukarıdaki st.title ve st.stop() kontrolleri aynı kalacak) ...
 
     if st.session_state.opt_input_df is None:
         st.error(f"Optimizasyon girdi verisi bulunamadı.")
@@ -574,35 +578,6 @@ elif page == "📈 Optimizasyon (Karar Modeli)":
         with st.spinner("Optimizasyon modeli çalışıyor... (Pyomo + glpk)"):
             try:
                 data = data_raw.copy()
-
-                # <--- PARÇA 2: GÜVENLİ VERİ HAZIRLIK BLOĞU EKLENDİ (KOD B'DEN) --->
-                st.write("Veri ön hazırlık adımı çalışıyor (Fiyat temizleme ve Gruplama)...")
-                
-                # Fiyat sütununu sayıya dönüştür (nokta ve virgül temizleme)
-                if data["ListPrice"].dtype == 'object':
-                    data["ListPrice"] = (
-                        data["ListPrice"]
-                        .astype(str)
-                        .str.replace(".", "", regex=False)  # binlik ayırıcı
-                        .str.replace(",", ".", regex=False) # ondalık ayırıcı
-                        .astype(float)
-                    )
-                
-                # Segmentleri tekilleştir (Aggregation)
-                segment_cols = ["Brand", "Gender", "Klasman", "SubCategory", "Line", "Channel"]
-                
-                numeric_cols = data.select_dtypes(include=['number', 'float']).columns.tolist()
-                aggregations = {col: "mean" for col in numeric_cols if col not in segment_cols}
-                aggregations.update({"TVALL_Sales_Qty": "sum"}) # Tahminleri topla
-                
-                if 'Channel' in aggregations:
-                    del aggregations['Channel'] # 'Channel' bir segment, ortalaması alınmamalı.
-
-                original_rows = len(data)
-                data = data.groupby(segment_cols, as_index=False).agg(aggregations)
-                st.write(f"Veri {original_rows} satırdan {len(data)} tekil segmente birleştirildi.")
-                # <--- GÜVENLİ BLOK SONU --->
-
 
                 # --- Adım 1: Parametreleri Hazırla ---
                 index_set = data.index.tolist()
@@ -671,113 +646,112 @@ elif page == "📈 Optimizasyon (Karar Modeli)":
                 data_final = data.copy()
             
             except Exception as e:
-                # Hata mesajı güncellendi (daha genel)
                 st.error(f"Optimizasyon sırasında bir hata oluştu: {e}")
-                st.info("Hata kaynağı: 1) 'Veri Hazırlık' adımı (ListPrice, Sütun adları) VEYA 2) 'glpk solver' kurulumu.")
+                st.info("glpk solver'ın sisteminizde kurulu olduğundan emin olun.")
                 st.stop() 
 
-            # ====================================================
-            # 🚀 YÖNETİCİ DASHBOARD'U GÖSTERİMİ
-            # ====================================================
-            
-            st.success("✅ Optimizasyon başarıyla tamamlandı!")
+        # ====================================================
+        # 🚀 YÖNETİCİ DASHBOARD'U GÖSTERİMİ
+        # ====================================================
+        
+        st.success("✅ Optimizasyon başarıyla tamamlandı!")
 
-            # --- KPI Hesaplamaları ---
-            total_sku = data_final["Optimal_SKU_FW26"].sum()
+        # --- KPI Hesaplamaları ---
+        total_sku = data_final["Optimal_SKU_FW26"].sum()
+        
+        if total_sku == 0:
+            st.warning("Model bir çözüm buldu ancak optimal SKU sayısı 0. Kısıtlar çok sıkı olabilir.")
+            st.stop()
             
-            if total_sku == 0:
-                st.warning("Model bir çözüm buldu ancak optimal SKU sayısı 0. Kısıtlar çok sıkı olabilir.")
-                st.stop()
-                
-            total_budget_used = (data_final["Optimal_SKU_FW26"] * data_final["ListPrice"]).sum()
-            budget_util_percent = (total_budget_used / Kullanilabilir_Butce) * 100
-            avg_margin_realized = (sum(data_final["Margin"] * data_final["Optimal_SKU_FW26"]) / total_sku)
-            basic_sku_sum = data_final[data_final['Line'].str.lower() == 'basic']['Optimal_SKU_FW26'].sum()
-            basic_ratio_realized = (basic_sku_sum / total_sku)
+        total_budget_used = (data_final["Optimal_SKU_FW26"] * data_final["ListPrice"]).sum()
+        budget_util_percent = (total_budget_used / Kullanilabilir_Butce) * 100
+        avg_margin_realized = (sum(data_final["Margin"] * data_final["Optimal_SKU_FW26"]) / total_sku)
+        basic_sku_sum = data_final[data_final['Line'].str.lower() == 'basic']['Optimal_SKU_FW26'].sum()
+        basic_ratio_realized = (basic_sku_sum / total_sku)
 
-            # --- 1. Yönetici Özeti (KPI Metrikleri) ---
-            
-            # === SON İSTEK: Başlık Değişikliği ===
-            st.subheader("📈 KPI Dashboard") 
-            # ==================================
-            
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("🎯 Toplam Potansiyel (Amaç)", f"{value(model.objective):,.0f}")
-            col2.metric("📦 Toplam Optimal SKU", f"{total_sku:,.0f} Adet")
-            col3.metric("💰 Kullanılan Bütçe", f"{total_budget_used:,.0f} TL")
-            col4.metric("📊 Bütçe Kullanım Oranı", f"{budget_util_percent:.1f} %")
+        # --- 1. Yönetici Özeti (KPI Metrikleri) ---
+        
+        # === SON İSTEK: Başlık Değişikliği ===
+        st.subheader("📈 KPI Dashboard") 
+        # ==================================
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("🎯 Toplam Potansiyel (Amaç)", f"{value(model.objective):,.0f}")
+        col2.metric("📦 Toplam Optimal SKU", f"{total_sku:,.0f} Adet")
+        col3.metric("💰 Kullanılan Bütçe", f"{total_budget_used:,.0f} TL")
+        col4.metric("📊 Bütçe Kullanım Oranı", f"{budget_util_percent:.1f} %")
 
-            st.divider()
+        st.divider()
 
-            # --- 2. Kısıt Karnesi ---
-            st.subheader("⚖️ Stratejik Kısıtların Performansı")
-            
-            c1, c2, c3 = st.columns(3)
-            
-            with c1: # Bütçe
-                st.markdown(f"<h5 style='text-align: center;'>💰 Bütçe</h5>", unsafe_allow_html=True)
-                st.metric("Kullanılabilir Bütçe", f"{Kullanilabilir_Butce:,.0f} TL")
-                st.metric("Kullanılan Bütçe", f"{total_budget_used:,.0f} TL")
+        # --- 2. Kısıt Karnesi ---
+        st.subheader("⚖️ Stratejik Kısıtların Performansı")
+        
+        c1, c2, c3 = st.columns(3)
+        
+        with c1: # Bütçe
+            st.markdown(f"<h5 style='text-align: center;'>💰 Bütçe</h5>", unsafe_allow_html=True)
+            st.metric("Kullanılabilir Bütçe", f"{Kullanilabilir_Butce:,.0f} TL")
+            st.metric("Kullanılan Bütçe", f"{total_budget_used:,.0f} TL")
 
-            with c2: # Marj
-                st.markdown(f"<h5 style='text-align: center;'>📈 Marj</h5>", unsafe_allow_html=True)
-                st.metric("Gerçekleşen Ort. Marj", f"{avg_margin_realized*100:.2f} %")
-                st.metric("Hedef Min. Marj", f"{MARGIN_MIN_ORAN*100:.2f} %",
-                            delta=f"{(avg_margin_realized - MARGIN_MIN_ORAN)*100:.2f} %", delta_color="normal")
-                            
-            with c3: # Basic Oranı
-                st.markdown(f"<h5 style='text-align: center;'>🎨 Basic/Line Oranı</h5>", unsafe_allow_html=True)
-                st.metric("Gerçekleşen Basic Oranı", f"{basic_ratio_realized*100:.1f} %")
-                st.metric("Hedef Aralık", f"{BASIC_MIN_ORAN*100:.1f}% - {BASIC_MAX_ORAN*100:.1f}%")
+        with c2: # Marj
+            st.markdown(f"<h5 style='text-align: center;'>📈 Marj</h5>", unsafe_allow_html=True)
+            st.metric("Gerçekleşen Ort. Marj", f"{avg_margin_realized*100:.2f} %")
+            st.metric("Hedef Min. Marj", f"{MARGIN_MIN_ORAN*100:.2f} %",
+                      delta=f"{(avg_margin_realized - MARGIN_MIN_ORAN)*100:.2f} %", delta_color="normal")
+                      
+        with c3: # Basic Oranı
+            st.markdown(f"<h5 style='text-align: center;'>🎨 Basic/Line Oranı</h5>", unsafe_allow_html=True)
+            st.metric("Gerçekleşen Basic Oranı", f"{basic_ratio_realized*100:.1f} %")
+            st.metric("Hedef Aralık", f"{BASIC_MIN_ORAN*100:.1f}% - {BASIC_MAX_ORAN*100:.1f}%")
 
-            # Kanal Payı Karnesi
-            st.markdown(f"<h5 style='text-align: center; margin-top: 20px;'>📺 Kanal Payları</h5>", unsafe_allow_html=True)
-            cols_channel = st.columns(len(CHANNEL_SHARES))
-            for idx, (ch, share) in enumerate(CHANNEL_SHARES.items()):
-                channel_sum = data_final[data_final["Channel"] == ch]["Optimal_SKU_FW26"].sum()
-                realized_share = (channel_sum / total_sku)
-                cols_channel[idx].metric(f"Kanal {ch} Payı (Hedef {share:.0%})", 
-                                            f"{realized_share:.1%}",
-                                            delta=f"{(realized_share - share):.1%}", delta_color="off")
-            
-            st.divider()
+        # Kanal Payı Karnesi
+        st.markdown(f"<h5 style='text-align: center; margin-top: 20px;'>📺 Kanal Payları</h5>", unsafe_allow_html=True)
+        cols_channel = st.columns(len(CHANNEL_SHARES))
+        for idx, (ch, share) in enumerate(CHANNEL_SHARES.items()):
+            channel_sum = data_final[data_final["Channel"] == ch]["Optimal_SKU_FW26"].sum()
+            realized_share = (channel_sum / total_sku)
+            cols_channel[idx].metric(f"Kanal {ch} Payı (Hedef {share:.0%})", 
+                                     f"{realized_share:.1%}",
+                                     delta=f"{(realized_share - share):.1%}", delta_color="off")
+        
+        st.divider()
 
-            # --- 3. Görsel Dağılım Analizi ---
-            st.subheader("📊 Dağılım Analizi (SKU Adetleri)")
-            
-            plot_tabs = st.tabs(["Marka'ya Göre", "Klasman'a Göre", "Line'a Göre"])
-            
-            with plot_tabs[0]: # Marka
-                df_brand = data_final.groupby("Brand")["Optimal_SKU_FW26"].sum().reset_index()
-                df_brand = df_brand[df_brand["Optimal_SKU_FW26"] > 0]
-                fig_brand = px.pie(df_brand, names="Brand", values="Optimal_SKU_FW26", title="SKU Dağılımı (Marka)", hole=0.3)
-                st.plotly_chart(fig_brand, use_container_width=True)
+        # --- 3. Görsel Dağılım Analizi ---
+        st.subheader("📊 Dağılım Analizi (SKU Adetleri)")
+        
+        plot_tabs = st.tabs(["Marka'ya Göre", "Klasman'a Göre", "Line'a Göre"])
+        
+        with plot_tabs[0]: # Marka
+            df_brand = data_final.groupby("Brand")["Optimal_SKU_FW26"].sum().reset_index()
+            df_brand = df_brand[df_brand["Optimal_SKU_FW26"] > 0]
+            fig_brand = px.pie(df_brand, names="Brand", values="Optimal_SKU_FW26", title="SKU Dağılımı (Marka)", hole=0.3)
+            st.plotly_chart(fig_brand, use_container_width=True)
 
-            with plot_tabs[1]: # Klasman
-                df_klasman = data_final.groupby("Klasman")["Optimal_SKU_FW26"].sum().reset_index()
-                df_klasman = df_klasman[df_klasman["Optimal_SKU_FW26"] > 0].sort_values("Optimal_SKU_FW26", ascending=False)
-                fig_klasman = px.bar(df_klasman, x="Klasman", y="Optimal_SKU_FW26", title="SKU Dağılımı (Klasman)")
-                st.plotly_chart(fig_klasman, use_container_width=True)
-                
-            with plot_tabs[2]: # Line
-                df_line = data_final.groupby("Line")["Optimal_SKU_FW26"].sum().reset_index()
-                df_line = df_line[df_line["Optimal_SKU_FW26"] > 0]
-                fig_line = px.pie(df_line, names="Line", values="Optimal_SKU_FW26", title="SKU Dağılımı (Line)")
-                st.plotly_chart(fig_line, use_container_width=True)
+        with plot_tabs[1]: # Klasman
+            df_klasman = data_final.groupby("Klasman")["Optimal_SKU_FW26"].sum().reset_index()
+            df_klasman = df_klasman[df_klasman["Optimal_SKU_FW26"] > 0].sort_values("Optimal_SKU_FW26", ascending=False)
+            fig_klasman = px.bar(df_klasman, x="Klasman", y="Optimal_SKU_FW26", title="SKU Dağılımı (Klasman)")
+            st.plotly_chart(fig_klasman, use_container_width=True)
+            
+        with plot_tabs[2]: # Line
+            df_line = data_final.groupby("Line")["Optimal_SKU_FW26"].sum().reset_index()
+            df_line = df_line[df_line["Optimal_SKU_FW26"] > 0]
+            fig_line = px.pie(df_line, names="Line", values="Optimal_SKU_FW26", title="SKU Dağılımı (Line)")
+            st.plotly_chart(fig_line, use_container_width=True)
 
-            st.divider()
-            
-            # --- 4. Detaylı Plan ve İndirme ---
-            st.subheader("📂 Optimal Plan (Detaylı Liste)")
-            
-            data_to_show = data_final[data_final["Optimal_SKU_FW26"] > 0].sort_values("Optimal_SKU_FW26", ascending=False)
-            st.info(f"Model, {len(data_final)} segment arasından {len(data_to_show)} segmente SKU ataması yaptı.")
-            st.dataframe(data_to_show)
-            
-            final_csv_data = convert_df_to_csv(data_to_show)
-            st.download_button(
-                label="💾 Optimal Planı Excel (CSV) Olarak İndir",
-                data=final_csv_data,
-                file_name="optimal_showroom_plani.csv",
-                mime="text/csv",
-            )
+        st.divider()
+        
+        # --- 4. Detaylı Plan ve İndirme ---
+        st.subheader("📂 Optimal Plan (Detaylı Liste)")
+        
+        data_to_show = data_final[data_final["Optimal_SKU_FW26"] > 0].sort_values("Optimal_SKU_FW26", ascending=False)
+        st.info(f"Model, {len(data_final)} segment arasından {len(data_to_show)} segmente SKU ataması yaptı.")
+        st.dataframe(data_to_show)
+        
+        final_csv_data = convert_df_to_csv(data_to_show)
+        st.download_button(
+            label="💾 Optimal Planı Excel (CSV) Olarak İndir",
+            data=final_csv_data,
+            file_name="optimal_showroom_plani.csv",
+            mime="text/csv",
+        )
