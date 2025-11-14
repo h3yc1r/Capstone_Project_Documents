@@ -1,6 +1,6 @@
 # 🧠 Range Planı Optimizasyon Projesi
 
-> Geçmiş sezon satış verilerini kullanarak FW26 sezonu için satış tahmini ve üretim optimizasyonu yapan uçtan uca karar destek sistemi.
+> Geçmiş sezon satış verilerini kullanarak FW26 sezonu için satış tahmini ve SKU optimizasyonu yapan uçtan uca karar destek sistemi.
 
 ---
 
